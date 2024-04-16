@@ -926,7 +926,7 @@ fit_components_gd <- function(response,
   nn <- ifelse(any(non_targets != 0), NCOL(non_targets), 0)
 
   # set starting parameters (on unconstrained scale)
-  kappa <- log(c(1, 10, 100))
+  kappa <- log(c(1, 5, 10))
   N <- c(-4.5, -2, -0.4)
   U <- c(-4.5, -2, -0.4)
 
@@ -1046,8 +1046,8 @@ components_model_pdf_gd <- function(response,
 
   # get the weight contributions of target and guess responses to performance
   if (precos) {
-    twopibe <- 2 * pi * besselI(kappa, 0)
-    w_t <- exp(kappa * error) / twopibe
+    twopibe <- 2 * pi * besselI(kappa, 0, expon.scaled = T)
+    w_t <- exp(kappa * (error - 1))/twopibe
   } else {
     w_t <- vonmisespdf(error, 0, kappa)
   }
@@ -1061,7 +1061,7 @@ components_model_pdf_gd <- function(response,
   # to performance
   if (nn > 0) {
     if (precos) {
-      w_n <- exp(kappa * non_target_error) / twopibe
+      w_n <- exp(kappa * (non_target_error - 1))/twopibe
     } else {
       w_n <- vonmisespdf(non_target_error, 0, kappa)
     }
@@ -1069,7 +1069,7 @@ components_model_pdf_gd <- function(response,
     w_t <- w_t + w_n
   }
 
-  -sum(log(w_t), na.rm = TRUE)
+  -sum(log(w_t))
   # calculate log likelihood of model
   # ll <- -sum(log(w_t))
 
