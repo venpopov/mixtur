@@ -925,13 +925,13 @@ fit_components_gd <- function(response,
   # number of non-targets
   nn <- ifelse(any(non_targets != 0), NCOL(non_targets), 0)
 
-  # set starting parameters
-  kappa <- c(1, 10, 100)
-  N <- c(0.01, 0.1, 0.4)
-  U <- c(0.01, 0.1, 0.4)
+  # set starting parameters (on unconstrained scale)
+  kappa <- log(c(1, 10, 100))
+  N <- c(-4.5, -2, -0.4)
+  U <- c(-4.5, -2, -0.4)
 
-  if(nn == 0){
-    N <- 0
+  if (nn == 0){
+    N <- -1000
   }
 
   # initialise log likelihood
@@ -942,17 +942,17 @@ fit_components_gd <- function(response,
     for(j in seq_along(N)) {
       for(k in seq_along(U)) {
 
-        if (model == "2_component") {
+        if (nn == 0) {
           start_parms <- c(kappa[i],
-                          U[k])
+                           U[k])
           pdf_fun <- components_model_pdf_gd_2p
-          control = list(parscale = c(1, 0.1))
+          # control = list(parscale = c(1, 0.1))
         } else {
           start_parms <- c(kappa[i],
-                          N[j],
-                          U[k])
+                           N[j],
+                           U[k])
           pdf_fun <- components_model_pdf_gd
-          control = list(parscale = c(1, 0.1, 0.1))
+          # control = list(parscale = c(1, 0.1, 0.1))
         }
 
 
@@ -965,25 +965,24 @@ fit_components_gd <- function(response,
                           non_target_error = non_target_error,
                           error = error,
                           precos = precos,
-                          method = "Nelder-Mead",
-                          control = control)
+                          method = "Nelder-Mead")
+                          # control = control)
 
 
         if (est_list$value < log_lik & !is.nan(est_list$value) ) {
           log_lik <- est_list$value
 
-          if(model == "2_component"){
-            parameters <- c(est_list$par[1],
-                            1 - est_list$par[2],
+          if (nn == 0) {
+            p_u <- 1/(1 + exp(-est_list$par[2]))
+            parameters <- c(exp(est_list$par[1]),
+                            1 - p_u,
                             0,
-                            est_list$par[2])
+                            p_u)
             parameters <- round(parameters, 3)
           } else {
-
-            parameters <- c(est_list$par[1],
-                            1 - est_list$par[2] - est_list$par[3],
-                            est_list$par[2],
-                            est_list$par[3])
+            exp_thetas <- c(1, exp(est_list$par[2:3]))
+            ps <- exp_thetas / sum(exp_thetas) # softmax
+            parameters <- c(exp(est_list$par[1]), ps)
             parameters <- round(parameters, 3)
           }
         }
@@ -1002,7 +1001,7 @@ fit_components_gd <- function(response,
 components_model_pdf_gd_2p <- function(response, target, error,
                                        start_parms = NULL, non_target_error = NULL,
                                        min_parms, max_parms, precos = FALSE) {
-  start_parms <- c(start_parms[1], 0, start_parms[2])
+  start_parms <- c(start_parms[1], -1000, start_parms[2])
   components_model_pdf_gd(response = response,
                           target = target,
                           error = error,
@@ -1025,34 +1024,24 @@ components_model_pdf_gd <- function(response,
                                     max_parms,
                                     precos = FALSE) {
 
-  # extract the parameters
-  parms <- c(start_parms[1],
-             1 - start_parms[2] - start_parms[3],
-             start_parms[2],
-             start_parms[3])
-
-  # check parameters are valid in terms of min and max values
-  if((!(is.null(parms))) &
-     (any(parms[1] < 0, parms[2:4] < 0,
-          parms[2:4] > 1, abs(sum(parms[2:4]) - 1) > 10 ^ - 6))) {
-    return(.Machine$double.xmax)
-  }
-
   # get the number of non-targets present
   nn <- if (is.null(non_target_error)) 0 else NCOL(non_target_error)
 
   # set default starting parameter if not provided, else assign starting
   # parameters to parameter variables
-  if(is.null(parms)) {
+  if (is.null(start_parms)) {
     kappa <- 5
     p_t <- 0.5
     p_n <- ifelse(nn > 0, 0.3, 0)
     p_u <- 1 - p_t - p_n
   } else {
-    kappa <- parms[1];
-    p_t <- parms[2]
-    p_n <- parms[3];
-    p_u <- parms[4]
+    # convert to native scale
+    kappa <- exp(start_parms[1])
+    exp_thetas <- c(1, exp(start_parms[2:3]))
+    ps <- exp_thetas / sum(exp_thetas) # softmax
+    p_t <- ps[1];
+    p_n <- ps[2];
+    p_u <- ps[3]
   }
 
   # get the weight contributions of target and guess responses to performance
@@ -1080,15 +1069,16 @@ components_model_pdf_gd <- function(response,
     w_t <- w_t + w_n
   }
 
+  -sum(log(w_t), na.rm = TRUE)
   # calculate log likelihood of model
-  ll <- -sum(log(w_t))
+  # ll <- -sum(log(w_t))
 
 
-  if(ll == Inf || ll == -Inf || is.na(ll)){
-    return(.Machine$double.xmax)
-  } else {
-    return(ll)
-  }
+  # if(ll == Inf || ll == -Inf || is.na(ll)){
+  #   return(.Machine$double.xmax)
+  # } else {
+  #   return(ll)
+  # }
 }
 
 
